@@ -1,0 +1,115 @@
+---
+title: "Final Project"
+author: 'Kai Jiang (NetId: kj1393)'
+date: "1/27/2021"
+urlcolor: blue
+output: pdf_document
+---
+```{r include=FALSE}
+setwd("~/Desktop/NYU/Intermediate Statistical programming in R") 
+## Chang to your path
+```
+
+# Synopsis: 
+## Problem: 
+### We always hear about that how is importance of wearing mask to protect ourselves under COVID-19. Additionally, in the United States, a lot of states had been introduced corresponding policies of face covering to prevent the spread of COVID-19. Previously, I did see some research about that how the incidence rate of COVID-19 can be reduced. However, I did not do any similar research to explore that how face covering can significantly reduce the spread of getting the disease. There, in this project, I will explore the relationship between face covering and cumulative/new cases and deaths of COVID-19. To achieve this topic, two datasets, US-states and States Actions to Mitigate the Spread of COVID-19(SAMS) were obtained from “The New York Times” github repository and Kaiser Family Foundation. Relative graph such as histogram and scatter plot will be used to visualize the trend. I think graph and table are the best way to show the relationship. In this project, reader can obtain a common sense of COVID-19 and face covering from the result.  
+## Package Required
+```{r, message = FALSE, warning = FALSE}
+library(tidyverse) ## data visualizing, transforming, inputting, tidying, and joining data 
+library(knitr) ## table editing
+library(scales) ## figure editing
+library(data.table) ## generate new variable
+```
+## Data Preparation:
+### As I mentioned, the US-states obtained from “The New York Times” github repository. Therefore, you can obtain the data by [click here](https://github.com/nytimes/covid-19-data). The SAMA can be founded in [here](https://www.kff.org/other/state-indicator/state-actions-to-mitigate-the-spread-of-covid-19/?currentTimeframe=0&selectedDistributions=status-of-reopening--stay-at-home-order--mandatory-quarantine-for-travelers--non-essential-business-closures--large-gatherings-ban--restaurant-limits--bar-closures--face-covering-requirement--emergency-declaration&sortModel=%7B%22colId%22:%22Location%22,%22sort%22:%22asc%22%7D) 
+### The dataset, US-states, contained cumulative cases and deaths of COVID-19 from January 21st, 2020 to January 13th, 2021. Each state was labeled with unique FIPS code. Additionally, in this dataset, cases and deaths of counties of unincorporated territory such as Puerto Rico, and district of Columbia were also including during the collection. 
+### Secondly, SAMS is kept updating. Several variables are included such as “status of reopening”, “stay at home order”, and “face covering requirement”. In this project, only variable of “face covering requirement” will be applied to conduct. Specially, “face covering requirement” was categorized into four types, and they are “allows local officials to require for general public”, “required for certain employees, “required for certain employees; allows local officials to require for general public”, and “required for general public”. Besides, the "-" in SAMS means that the states did not introduce any policies, so it will be coded into "no_action" before inputing to R. 
+### Two datasets will be merged by using the key “states”. However, SAMS does not contain information about unincorporated territory, so US-states' unincorporated territory will be removed. Besides, since I will only use the variable of “face covering requirement", the rest of the SAMS variables will be removed. Moreover, before March 1st, 2020, US-states did not contain enough information about by each state, so the data before March 1st, 2020 will be dropped. Fianlly, missing value will be dropped after evaluation. 
+```{r}
+us_states <- read_csv("us-states.csv") 
+sams <- read_csv("raw_data.csv") 
+```
+
+```{r}
+dt<- us_states %>%
+  left_join(sams, by=c("state"="Location")) %>%
+  select(date,state, cases, deaths,`Face Covering Requirement`)
+dt1<-dt %>%
+  filter(date>=as.Date("2020-03-01"))
+dt2<- dt1
+dt2<-dt2 %>%
+  group_by(`Face Covering Requirement`, date) %>%
+  summarise(cul_case=sum(cases), cul_death=sum(deaths)) %>%
+  ungroup()
+dim(dt2)
+dt2 = data.table(dt2)
+setDT(dt2, key = "`Face Covering Requirement`")
+dt2[, last_day_case := shift(cul_case, 1), by = `Face Covering Requirement`]
+dt2[, new_case := cul_case - last_day_case]
+dt2[,last_day_death:=shift(cul_death,1),by=`Face Covering Requirement`]
+dt2[, new_death:=cul_death - last_day_death]
+dt2<-subset(dt2, select = -c(last_day_case, last_day_death))
+dt2<-dt2 %>%
+  na.omit()
+head(dt2)
+kable(head(dt2), 
+      caption = "Head of Clean Data", 
+      bookstabs = T, col.names = c("Face Covering Requirement", "Date", 
+                                   "Cumulative cases", "Cumulative deaths", 
+                                   "Daily cases", "Daily deaths"))
+```
+###	In table 1, the head of clean data was shown. Cumulative cases and deaths were calculated by groups of face-covering requirement and dates. The first six rows showed that cumulative cases and deaths of “Allows Local Officials to Require for General Public” from March 5th, 2020 to March 10th, 2020, and cumulative cases and death were 16 and 0 separately. 
+```{r}
+kable(aggregate(new_case ~  `Face Covering Requirement`, dt2, mean ), 
+      caption = "Mean of COVID-19 Cases under Face Covering Policy", 
+      bookstabs = T, 
+      col.names = c("Face Covering Requirement", "Daily cases")) 
+kable(aggregate(new_death ~ `Face Covering Requirement`, dt2, mean),
+      caption = "Mean of COVID-19 Deaths under Face Covering Policy", 
+      bookstabs = T, 
+      col.names = c("Face Covering Requirement", "Daily deaths")) 
+
+```
+### From table 2, the Mean of COVID-19 Cases under Face Covering Policy, states with policy, “required for certain employees”, have the lowest means of COVID-19 cases, 1202.54, between March 1st, 2020 and January 13th, 2021. Compared with requiring masks for certain public, states with policy, “required for general public” have the highest means of COVID-19 cases which is 55910.04. 
+### From table 3, the Mean of COVID-19 Deaths under Face Covering Policy, states with policy, “Required for Certain Employees”, have the lowest means of daily COVID-19 deaths, 11.48, between March 1st, 2020 and January 13th, 2021. Compared with allowing local officials to require for general public, states with policy, “required for general public” have the highest means of COVID-19 daily death which is 971.22.
+## Exploratory Data Analysis
+```{r fig.width=15, fig.height=5, fig.fullwidth=TRUE, fig.cap=" Cumulative cases under Mask Policy Control"}
+cul_case_figure<-ggplot(dt2, aes(date,cul_case, 
+                             color=fct_reorder(`Face Covering Requirement`, 
+                                               cul_case))) + geom_line()
+cul_case_figure+labs(color="Face Covering Requirement", x="Date", y="Culmulative cases")+
+  scale_y_continuous(labels = comma)+
+  theme(plot.caption = element_text(hjust = 0.5))
+```
+
+```{r fig.width=15, fig.height=5, fig.fullwidth=TRUE, fig.cap=" Cumulative deaths under Mask Policy Control"}
+cul_death_figure<-ggplot(dt2, aes(date,cul_death, 
+                              color=fct_reorder(`Face Covering Requirement`, 
+                                                cul_death))) + geom_line()
+cul_death_figure+labs(color="Face Covering Requirement", x="Date", y="Culmulative deaths")+
+  scale_y_continuous(labels = comma)+
+  theme(plot.caption = element_text(hjust = 0.5))
+```
+```{r fig.width=15, fig.height=5, fig.fullwidth=TRUE, fig.cap=" Daily cases under Mask Policy Control"}
+new_case_figure<-ggplot(dt2, aes(date,new_case, 
+                             color=fct_reorder(`Face Covering Requirement`, 
+                                               new_case))) + geom_line()
+new_case_figure+labs(color="Face Covering Requirement", x="Date", y="Daily cases")+
+  scale_y_continuous(labels = comma)+
+  theme(plot.caption = element_text(hjust = 0.5))
+```
+
+
+```{r fig.width=15, fig.height=5, fig.fullwidth=TRUE, fig.cap=" Daily deaths under Mask Policy Control"}
+new_death_figure<-ggplot(dt2, aes(date,new_death, 
+                              color=fct_reorder(`Face Covering Requirement`, 
+                                                new_death))) + geom_line()
+new_death_figure+labs(color="Face Covering Requirement", x="Date", y="Daily deaths")+
+  scale_y_continuous(labels = comma)+
+  theme(plot.caption = element_text(hjust = 0.5))
+```
+
+### Figure 1 and figure 2 show that cumulative cases and deaths of states with face covering policy, “Required for General Public", are highest. Besides, States with policy, “Required for certain employees”, showed a moderate tendency of cumulative cases and deaths. From figure 3, the trend of daily cases is fluctuating. However, the movement of “Required for general public” is still significantly increasing, but states with other face covering policy have a more moderate trend. Comparing with the figure 3, in figure 4, the tendency of daily death is more fluctuating. Especially, according to the figure4, states with policy, “Required for general public”, cannot be predicted. 
+
+## Summary
+### COVID-19 and states’ face covering policy was explored. States with policy, “Required for general public”, showed the highest rate of cumulative/new cases and deaths. I do feel my result conflicts with common sense. If states introduced more restrictions with face covering, the states will have a lower rate of cumulative/new cases and deaths of COVID-19. However, I also feel my result is reliable. Generally, only states with a high population density and increased risk of COVID-19 would introduce face covering restriction solidly. Therefore, I think between COVID-19 and faceb covering path, some potential confounder and effect measure modifiers exist. More variables should be included, such as larger gathering ban or stay at home order. Lastly, from the data, we can say that now COVID-19 is still serious and dangerous, and there are still daily new cases and new death. The government should introduce more restrictions to prevent the spread of COVID-19. Residents should try to avoid exposure in the outside.  
